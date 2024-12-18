@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,16 @@ import {
   StyleSheet,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme/theme';
-import { CartItem as CartItemType, Product } from '../../types';
+import { CartItem as CartItemType } from '../../types';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../services/firebase';
 
 interface CartItemProps {
   item: CartItemType;
-  product: Product;
   onUpdateQuantity: (id: string, quantity: number) => void;
   onRemove: (id: string) => void;
 }
@@ -23,22 +25,46 @@ const IMAGE_SIZE = width * 0.25;
 
 export const CartItemComponent = ({
   item,
-  product,
   onUpdateQuantity,
   onRemove,
 }: CartItemProps) => {
-  const formatPrice = (price: number) => {
+  const [stock, setStock] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetchStock();
+  }, []);
+
+  const fetchStock = async () => {
+    try {
+      setLoading(true);
+      const productDoc = await getDoc(doc(db, 'products', item.productId));
+      if (productDoc.exists()) {
+        const product = productDoc.data();
+        setStock(product.stock);
+      }
+    } catch (error) {
+      console.error('Error fetching stock:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatPrice = (price: number | undefined) => {
+    if (typeof price === 'undefined') return '0 €';
     return price.toLocaleString('fr-FR', {
       style: 'currency',
       currency: 'EUR',
     });
   };
 
+  const isMaxQuantity = stock !== null && item.quantity >= stock;
+
   return (
     <View style={styles.container}>
       {/* Image du produit */}
       <Image
-        source={{ uri: product.images[0] }}
+        source={{ uri: item.image }}
         style={styles.image}
         resizeMode="cover"
       />
@@ -47,9 +73,8 @@ export const CartItemComponent = ({
       <View style={styles.details}>
         <View style={styles.header}>
           <View style={styles.titleContainer}>
-            <Text style={styles.brand}>{product.brand}</Text>
-            <Text style={styles.name} numberOfLines={1}>
-              {product.name}
+            <Text style={styles.name} numberOfLines={2}>
+              {item.name}
             </Text>
           </View>
           <TouchableOpacity
@@ -60,20 +85,16 @@ export const CartItemComponent = ({
           </TouchableOpacity>
         </View>
 
-        {/* Variantes sélectionnées */}
+        {/* Taille sélectionnée */}
         <View style={styles.variants}>
           <Text style={styles.variantText}>
-            Taille : {item.selectedSize}
+            Taille : {item.size}
           </Text>
-          <View style={styles.colorContainer}>
-            <Text style={styles.variantText}>Couleur : </Text>
-            <View
-              style={[
-                styles.colorDot,
-                { backgroundColor: item.selectedColor.code },
-              ]}
-            />
-          </View>
+          {stock !== null && (
+            <Text style={[styles.variantText, stock < 5 && styles.lowStock]}>
+              Stock disponible : {stock}
+            </Text>
+          )}
         </View>
 
         {/* Prix et quantité */}
@@ -102,10 +123,22 @@ export const CartItemComponent = ({
             </TouchableOpacity>
             <Text style={styles.quantity}>{item.quantity}</Text>
             <TouchableOpacity
-              style={styles.quantityButton}
-              onPress={() => onUpdateQuantity(item.id, item.quantity + 1)}
+              style={[
+                styles.quantityButton,
+                isMaxQuantity && styles.quantityButtonDisabled,
+              ]}
+              onPress={() => !isMaxQuantity && onUpdateQuantity(item.id, item.quantity + 1)}
+              disabled={isMaxQuantity}
             >
-              <Ionicons name="add" size={20} color={theme.colors.text} />
+              {loading ? (
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              ) : (
+                <Ionicons
+                  name="add"
+                  size={20}
+                  color={isMaxQuantity ? theme.colors.textSecondary : theme.colors.text}
+                />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -119,16 +152,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: theme.spacing.md,
     backgroundColor: 'white',
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.lg,
     marginBottom: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
   },
   image: {
     width: IMAGE_SIZE,
     height: IMAGE_SIZE,
-    borderRadius: theme.borderRadius.sm,
-    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.md,
   },
   details: {
     flex: 1,
@@ -143,11 +173,6 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: theme.spacing.md,
   },
-  brand: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    marginBottom: 2,
-  },
   name: {
     fontSize: 16,
     fontWeight: '500',
@@ -155,23 +180,15 @@ const styles = StyleSheet.create({
   },
   variants: {
     marginTop: theme.spacing.sm,
-    gap: 4,
   },
   variantText: {
     fontSize: 14,
     color: theme.colors.textSecondary,
+    marginBottom: 2,
   },
-  colorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  colorDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    marginLeft: 4,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+  lowStock: {
+    color: theme.colors.error,
+    fontWeight: '500',
   },
   footer: {
     flexDirection: 'row',
@@ -191,10 +208,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.sm,
   },
   quantityButton: {
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
+    padding: theme.spacing.sm,
   },
   quantityButtonDisabled: {
     opacity: 0.5,
@@ -203,7 +217,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     marginHorizontal: theme.spacing.sm,
-    minWidth: 24,
-    textAlign: 'center',
   },
 });

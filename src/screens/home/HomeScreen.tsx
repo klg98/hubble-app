@@ -52,23 +52,33 @@ export const HomeScreen = ({ navigation }: any) => {
       );
       const storesSnapshot = await getDocs(storesQuery);
       const storesData = await Promise.all(storesSnapshot.docs.map(async doc => {
-        // Fetch recent products for each store
-        const productsQuery = query(
-          collection(db, 'products'),
-          where('storeId', '==', doc.id),
-          orderBy('createdAt', 'desc'),
-          limit(6)
-        );
-        const productsSnapshot = await getDocs(productsQuery);
-        const recentProducts = productsSnapshot.docs.map(
-          productDoc => productDoc.data().images[0]
-        );
+        try {
+          // Fetch recent products for each store
+          const productsQuery = query(
+            collection(db, 'products'),
+            where('storeId', '==', doc.id),
+            orderBy('createdAt', 'desc'),
+            limit(6)
+          );
+          const productsSnapshot = await getDocs(productsQuery);
+          const recentProducts = productsSnapshot.docs.map(
+            productDoc => productDoc.data().images[0]
+          );
 
-        return {
-          id: doc.id,
-          ...doc.data(),
-          recentProducts
-        } as Store;
+          return {
+            id: doc.id,
+            ...doc.data(),
+            recentProducts
+          } as Store;
+        } catch (error) {
+          console.error(`Error fetching products for store ${doc.id}:`, error);
+          // Return store data without recent products in case of error
+          return {
+            id: doc.id,
+            ...doc.data(),
+            recentProducts: []
+          } as Store;
+        }
       }));
       setPopularStores(storesData);
 

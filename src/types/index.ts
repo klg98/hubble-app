@@ -12,6 +12,7 @@ export interface Store {
   id: string;
   ownerId: string;
   name: string;
+  username: string; // Identifiant unique de la boutique (@...)
   description: string;
   logo: string;
   bannerImage: string;
@@ -22,10 +23,11 @@ export interface Store {
   rating: number;
   reviewCount: number;
   followers: number;
+  following: number; // Nombre de fidélisations
   isVerified: boolean;
   createdAt: number;
   updatedAt: number;
-  status: 'active' | 'inactive' | 'pending';
+  status: 'pending' | 'active' | 'suspended';
   metrics: {
     totalSales: number;
     totalProducts: number;
@@ -96,38 +98,87 @@ export interface StoreProduct {
   updatedAt: number;
 }
 
+export interface CartItem {
+  id: string;
+  productId: string;
+  storeId: string;
+  userId: string;
+  quantity: number;
+  selectedSize?: Size;
+  selectedColor?: Color;
+  price: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface OrderItem extends CartItem {
+  productName: string;
+  productImage: string;
+}
+
+export type OrderStatus = 
+  | 'pending'     // En attente de confirmation du vendeur
+  | 'confirmed'   // Confirmée par le vendeur
+  | 'preparing'   // En cours de préparation
+  | 'ready'       // Prête pour la livraison/retrait
+  | 'cancelled';  // Annulée
+
+export interface StoreOrder {
+  id: string;
+  orderId: string;
+  storeId: string;
+  userId: string;
+  items: OrderItem[];
+  status: OrderStatus;
+  subtotal: number;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Order {
+  id: string;
+  userId: string;
+  ordersByStore: { [storeId: string]: StoreOrder };
+  totalAmount: number;
+  createdAt: number;
+  updatedAt: number;
+  deliveryInfo?: {
+    name: string;
+    phone: string;
+    address: string;
+  };
+}
+
+export interface Address {
+  street: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  phone: string;
+}
+
 export interface StoreMetrics {
-  dailySales: {
-    date: string;
+  totalSales: number;
+  totalOrders: number;
+  totalProducts: number;
+  rating: number;
+  pendingOrders: number;
+  recentOrders: {
+    id: string;
+    orderId: string;
     amount: number;
-    orders: number;
+    createdAt: number;
+    status: OrderStatus;
   }[];
   topProducts: {
     id: string;
     name: string;
-    sales: number;
+    image: string;
+    totalSales: number;
     revenue: number;
   }[];
-  recentOrders: {
-    id: string;
-    date: string;
-    amount: number;
-    status: string;
-  }[];
-  customerStats: {
-    total: number;
-    new: number;
-    returning: number;
-  };
-}
-
-export interface CartItem {
-  id: string;
-  productId: string;
-  quantity: number;
-  selectedSize: Size;
-  selectedColor: Color;
-  price: number;
 }
 
 export interface StoreFollower {

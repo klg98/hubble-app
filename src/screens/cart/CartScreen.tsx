@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   collection,
   query,
@@ -18,22 +19,35 @@ import {
   updateDoc,
   deleteDoc,
   getDoc,
+  writeBatch,
+  increment,
+  arrayUnion,
+  setDoc,
 } from 'firebase/firestore';
 import { db, auth } from '../../services/firebase';
 import { theme } from '../../theme/theme';
-import { CartItem, Product } from '../../types';
+import { CartItem, Product, StoreOrder, Order, OrderItem } from '../../types';
 import { CartItemComponent } from '../../components/cart/CartItem';
 import { Button } from '../../components/common/Button';
 
+// Fonction de génération d'ID unique
+const generateId = () => {
+  const timestamp = Date.now().toString(36);
+  const randomStr = Math.random().toString(36).substring(2, 8);
+  return `${timestamp}-${randomStr}`;
+};
+
 export const CartScreen = () => {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [products, setProducts] = useState<{ [key: string]: Product }>({});
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
 
-  useEffect(() => {
-    fetchCartItems();
-  }, []);
+  // Recharger le panier quand l'écran est focalisé
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchCartItems();
+    }, [])
+  );
 
   const fetchCartItems = async () => {
     try {
@@ -41,7 +55,6 @@ export const CartScreen = () => {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
 
-      // Récupérer les articles du panier
       const cartQuery = query(
         collection(db, 'cart'),
         where('userId', '==', userId)
@@ -52,24 +65,7 @@ export const CartScreen = () => {
         ...doc.data(),
       })) as CartItem[];
 
-      // Récupérer les détails des produits
-      const productIds = [...new Set(items.map(item => item.productId))];
-      const productsData: { [key: string]: Product } = {};
-      
-      await Promise.all(
-        productIds.map(async (productId) => {
-          const productDoc = await getDoc(doc(db, 'products', productId));
-          if (productDoc.exists()) {
-            productsData[productId] = {
-              id: productDoc.id,
-              ...productDoc.data(),
-            } as Product;
-          }
-        })
-      );
-
       setCartItems(items);
-      setProducts(productsData);
     } catch (error) {
       console.error('Error fetching cart:', error);
       Alert.alert('Erreur', 'Impossible de charger votre panier');
@@ -81,7 +77,27 @@ export const CartScreen = () => {
   const handleUpdateQuantity = async (itemId: string, quantity: number) => {
     try {
       setUpdating(true);
-      await updateDoc(doc(db, 'cart', itemId), { quantity });
+      const cartItem = cartItems.find(item => item.id === itemId);
+      if (!cartItem) return;
+
+      // Vérifier le stock disponible
+      const productDoc = await getDoc(doc(db, 'products', cartItem.productId));
+      if (!productDoc.exists()) {
+        Alert.alert('Erreur', 'Produit non trouvé');
+        return;
+      }
+
+      const product = productDoc.data() as Product;
+      if (quantity > product.stock) {
+        Alert.alert('Stock insuffisant', `Il ne reste que ${product.stock} unité(s) en stock.`);
+        return;
+      }
+
+      await updateDoc(doc(db, 'cart', itemId), { 
+        quantity,
+        updatedAt: Date.now()
+      });
+      
       setCartItems(prev =>
         prev.map(item =>
           item.id === itemId ? { ...item, quantity } : item
@@ -110,7 +126,7 @@ export const CartScreen = () => {
 
   const calculateTotal = () => {
     return cartItems.reduce((total, item) => {
-      return total + item.price * item.quantity;
+      return total + (item.price * item.quantity);
     }, 0);
   };
 
@@ -121,76 +137,184 @@ export const CartScreen = () => {
     });
   };
 
-  const handleCheckout = () => {
-    // TODO: Implémenter le processus de paiement
-    Alert.alert('En cours de développement', 'Le paiement sera bientôt disponible');
+  const handleCreateOrder = async () => {
+    try {
+      if (!auth.currentUser) return;
+      setUpdating(true);
+
+      // Récupérer les informations de l'utilisateur
+      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      if (!userDoc.exists()) {
+        Alert.alert('Erreur', 'Informations utilisateur introuvables');
+        return;
+      }
+      const userData = userDoc.data();
+
+      // Créer une nouvelle commande principale
+      const orderId = generateId();
+      const orderRef = doc(db, 'orders', orderId);
+      
+      // Préparer les commandes par magasin
+      const storeOrders: { [storeId: string]: StoreOrder } = {};
+      const batch = writeBatch(db);
+
+      // Créer les commandes pour chaque magasin
+      for (const item of cartItems) {
+        const storeOrderId = generateId();
+        const storeOrderRef = doc(db, 'storeOrders', storeOrderId);
+        
+        const orderItem: OrderItem = {
+          ...item,
+          productName: item.name,
+          productImage: item.image,
+        };
+
+        const storeOrder: StoreOrder = {
+          id: storeOrderId,
+          orderId,
+          storeId: item.storeId,
+          userId: auth.currentUser.uid,
+          items: [orderItem],
+          status: 'pending',
+          subtotal: item.price * item.quantity,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          customerInfo: {
+            name: userData.displayName || '',
+            phone: userData.phone || '',
+            email: userData.email || '',
+            address: userData.address || '',
+            location: userData.location || null,
+          },
+        };
+
+        storeOrders[item.storeId] = storeOrder;
+        batch.set(storeOrderRef, storeOrder);
+      }
+
+      // Créer la commande principale
+      const order: Order = {
+        id: orderId,
+        userId: auth.currentUser.uid,
+        ordersByStore: storeOrders,
+        totalAmount: calculateTotal(),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        status: 'pending'
+      };
+
+      batch.set(orderRef, order);
+
+      // Supprimer les articles du panier
+      for (const item of cartItems) {
+        batch.delete(doc(db, 'cart', item.id));
+      }
+
+      // Exécuter toutes les opérations de base
+      await batch.commit();
+
+      // Mettre à jour les métriques des magasins
+      await Promise.all(
+        Object.entries(storeOrders).map(async ([storeId, storeOrder]) => {
+          const metricsRef = doc(db, 'stores', storeId, 'metrics', 'latest');
+          
+          // Vérifier si le document metrics existe
+          const metricsDoc = await getDoc(metricsRef);
+          
+          if (!metricsDoc.exists()) {
+            // Créer le document metrics s'il n'existe pas
+            await setDoc(metricsRef, {
+              pendingOrders: 1,
+              totalOrders: 1,
+              totalSales: storeOrder.subtotal,
+              recentOrders: [{
+                id: storeOrder.id,
+                orderId: storeOrder.orderId,
+                amount: storeOrder.subtotal,
+                createdAt: storeOrder.createdAt,
+                status: storeOrder.status,
+              }],
+              updatedAt: Date.now()
+            });
+          } else {
+            // Mettre à jour le document existant
+            await updateDoc(metricsRef, {
+              pendingOrders: increment(1),
+              totalOrders: increment(1),
+              totalSales: increment(storeOrder.subtotal),
+              recentOrders: arrayUnion({
+                id: storeOrder.id,
+                orderId: storeOrder.orderId,
+                amount: storeOrder.subtotal,
+                createdAt: storeOrder.createdAt,
+                status: storeOrder.status,
+              }),
+              updatedAt: Date.now()
+            });
+          }
+        })
+      );
+
+      // Vider le panier local
+      setCartItems([]);
+      Alert.alert('Succès', 'Votre commande a été créée avec succès');
+
+    } catch (error) {
+      console.error('Error creating order:', error);
+      Alert.alert('Erreur', 'Impossible de créer la commande');
+    } finally {
+      setUpdating(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-      </View>
-    );
-  }
-
-  if (cartItems.length === 0) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.emptyState}>
-          <Ionicons
-            name="cart-outline"
-            size={64}
-            color={theme.colors.textSecondary}
-          />
-          <Text style={styles.emptyStateTitle}>Votre panier est vide</Text>
-          <Text style={styles.emptyStateText}>
-            Parcourez notre catalogue pour trouver des articles qui vous plaisent
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const renderCartItem = ({ item }: { item: CartItem }) => (
+    <CartItemComponent
+      key={item.id}
+      item={item}
+      onUpdateQuantity={handleUpdateQuantity}
+      onRemove={handleRemoveItem}
+    />
+  );
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Mon Panier</Text>
-        <Text style={styles.itemCount}>
-          {cartItems.length} article{cartItems.length > 1 ? 's' : ''}
-        </Text>
-      </View>
-
-      <FlatList
-        data={cartItems}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <CartItemComponent
-            item={item}
-            product={products[item.productId]}
-            onUpdateQuantity={handleUpdateQuantity}
-            onRemove={handleRemoveItem}
-          />
-        )}
-        contentContainerStyle={styles.list}
-      />
-
-      <View style={styles.footer}>
-        <View style={styles.totalContainer}>
-          <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalAmount}>{formatPrice(calculateTotal())}</Text>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
-
-        <Button
-          onPress={handleCheckout}
-          disabled={updating}
-          style={styles.checkoutButton}
-        >
-          <Text style={styles.checkoutButtonText}>
-            Passer la commande
-          </Text>
-        </Button>
-      </View>
+      ) : cartItems.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>Votre panier est vide</Text>
+        </View>
+      ) : (
+        <>
+          <FlatList
+            data={cartItems}
+            renderItem={renderCartItem}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.list}
+            refreshing={loading}
+            onRefresh={fetchCartItems}
+          />
+          <View style={styles.footer}>
+            <View style={styles.totalContainer}>
+              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalAmount}>
+                {formatPrice(calculateTotal())}
+              </Text>
+            </View>
+            <Button
+              onPress={handleCreateOrder}
+              loading={updating}
+              style={styles.checkoutButton}
+            >
+              <Text style={styles.checkoutButtonText}>
+                Commander ({cartItems.length})
+              </Text>
+            </Button>
+          </View>
+        </>
+      )}
     </SafeAreaView>
   );
 };
@@ -205,42 +329,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  header: {
-    padding: theme.spacing.lg,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  itemCount: {
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-    marginTop: 4,
-  },
-  list: {
-    padding: theme.spacing.md,
-  },
-  emptyState: {
+  emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: theme.spacing.xl,
   },
-  emptyStateTitle: {
+  emptyText: {
     fontSize: 20,
     fontWeight: '600',
     color: theme.colors.text,
-    marginTop: theme.spacing.lg,
-    marginBottom: theme.spacing.sm,
   },
-  emptyStateText: {
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-    textAlign: 'center',
+  list: {
+    padding: theme.spacing.md,
   },
   footer: {
     padding: theme.spacing.lg,

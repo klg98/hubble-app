@@ -1,26 +1,39 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
-import { Store } from '../../types';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  Dimensions,
+  Modal,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme/theme';
+import { Store } from '../../types';
 import { auth, db } from '../../services/firebase';
 import { doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
-import { useNavigation } from '@react-navigation/native';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
 
 interface StoreCardProps {
   store: Store;
-  onOwnerPress: () => void;
+  onPress?: () => void;
+  onOwnerPress?: () => void;
 }
 
-export const StoreCard = ({ store, onOwnerPress }: StoreCardProps) => {
-  const navigation = useNavigation();
+export const StoreCard = ({ store, onPress, onOwnerPress }: StoreCardProps) => {
   const [isFollowing, setIsFollowing] = useState(false);
-  const [loadingFollow, setLoadingFollow] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [ownerBio, setOwnerBio] = useState('');
+  const [showBioModal, setShowBioModal] = useState(false);
 
   useEffect(() => {
-    checkIfFollowing();
+    checkFollowStatus();
+    fetchOwnerBio();
   }, []);
 
-  const checkIfFollowing = async () => {
+  const checkFollowStatus = async () => {
     if (!auth.currentUser) return;
     try {
       const followDoc = await getDoc(
@@ -32,224 +45,316 @@ export const StoreCard = ({ store, onOwnerPress }: StoreCardProps) => {
     }
   };
 
+  const fetchOwnerBio = async () => {
+    try {
+      const ownerDoc = await getDoc(doc(db, 'users', store.ownerId));
+      if (ownerDoc.exists()) {
+        setOwnerBio(ownerDoc.data().bio || '');
+      }
+    } catch (error) {
+      console.error('Error fetching owner bio:', error);
+    }
+  };
+
   const handleFollow = async () => {
     if (!auth.currentUser) return;
-    setLoadingFollow(true);
-
-    const followerId = auth.currentUser.uid;
-    const followDoc = doc(db, 'followers', `${followerId}_${store.id}`);
-
+    setLoading(true);
     try {
+      const followerId = auth.currentUser.uid;
+      const followDoc = doc(db, 'followers', `${followerId}_${store.id}`);
+
       if (isFollowing) {
         await deleteDoc(followDoc);
+        // Décrémenter le nombre de followers
+        await setDoc(doc(db, 'stores', store.id), {
+          followers: store.followers - 1
+        }, { merge: true });
       } else {
         await setDoc(followDoc, {
           userId: followerId,
           storeId: store.id,
           createdAt: Date.now()
         });
+        // Incrémenter le nombre de followers
+        await setDoc(doc(db, 'stores', store.id), {
+          followers: store.followers + 1
+        }, { merge: true });
       }
       setIsFollowing(!isFollowing);
     } catch (error) {
-      console.error('Error following store:', error);
+      console.error('Error toggling follow:', error);
     } finally {
-      setLoadingFollow(false);
+      setLoading(false);
     }
   };
 
-  const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp);
-    const month = date.toLocaleString('fr-FR', { month: 'long' });
-    return `créé en ${month} ${date.getFullYear()}`;
+  const formatCreationDate = (timestamp: number) => {
+    return `créé en ${format(timestamp, 'MMMM yyyy', { locale: fr })}`;
   };
 
-  const navigateToStore = () => {
-    navigation.navigate('StoreDetails', { storeId: store.id });
+  const getDisplayImage = () => {
+    if (store.recentProducts && store.recentProducts.length > 0) {
+      return store.recentProducts[0];
+    }
+    if (store.bannerImage) {
+      return store.bannerImage;
+    }
+    return store.logo;
   };
 
   return (
-    <TouchableOpacity onPress={navigateToStore}>
-      <View style={styles.container}>
-        <Image 
-          source={{ uri: store.imageUrl }} 
-          style={styles.image}
-          resizeMode="cover"
-        />
-        
-        <View style={styles.headerContainer}>
-          <View style={styles.storeInfo}>
-            <Text style={styles.name}>{store.name}</Text>
-            <Text style={styles.handle}>@{store.handle}</Text>
-            <Text style={styles.createdAt}>{formatDate(store.createdAt)}</Text>
-          </View>
-          
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[
-                styles.followButton,
-                isFollowing && styles.followingButton,
-                loadingFollow && styles.loadingButton
-              ]}
-              onPress={handleFollow}
-              disabled={loadingFollow}
-            >
-              <Text style={[
-                styles.followButtonText,
-                isFollowing && styles.followingButtonText
-              ]}>
-                {isFollowing ? 'Fidélisé' : 'Se fidéliser'}
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.ownerButton}
-              onPress={onOwnerPress}
-            >
-              <Text style={styles.ownerButtonText}>Propriétaire</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <Text 
-          style={styles.description}
-          numberOfLines={2}
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={[
+            styles.followButton,
+            isFollowing && styles.followingButton
+          ]}
+          onPress={handleFollow}
+          disabled={loading}
         >
-          {store.description}
-        </Text>
+          <Text style={[
+            styles.followButtonText,
+            isFollowing && styles.followingButtonText
+          ]}>
+            {isFollowing ? 'Fidélisé' : 'Se fidéliser'}
+          </Text>
+        </TouchableOpacity>
 
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{store.products}</Text>
-            <Text style={styles.statLabel}>Articles</Text>
+        <TouchableOpacity onPress={onPress} style={styles.profileSection}>
+          <View style={styles.logoContainer}>
+            <Image source={{ uri: store.logo }} style={styles.logo} />
           </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{store.followers}</Text>
-            <Text style={styles.statLabel}>Fidèles</Text>
+          <View style={styles.nameSection}>
+            <Text style={styles.name}>{store.name}</Text>
+            <Text style={styles.username}>@{store.username}</Text>
+            <Text style={styles.creationDate}>
+              {formatCreationDate(store.createdAt)}
+            </Text>
           </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{store.following}</Text>
-            <Text style={styles.statLabel}>Fidélisations</Text>
-          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.ownerButton}
+          onPress={() => setShowBioModal(true)}
+        >
+          <Text style={styles.ownerButtonText}>Propriétaire</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text 
+        style={styles.description}
+        numberOfLines={2}
+        ellipsizeMode="tail"
+      >
+        {store.description}
+      </Text>
+
+      <View style={styles.statsContainer}>
+        <View style={styles.stat}>
+          <Text style={styles.statNumber}>{store.metrics.totalProducts}</Text>
+          <Text style={styles.statLabel}>Articles</Text>
         </View>
-
-        <View style={styles.productsGrid}>
-          {store.recentProducts?.slice(0, 6).map((imageUrl, index) => (
-            <Image
-              key={index}
-              source={{ uri: imageUrl }}
-              style={styles.productImage}
-              resizeMode="cover"
-            />
-          ))}
+        <View style={styles.stat}>
+          <Text style={styles.statNumber}>{store.followers}</Text>
+          <Text style={styles.statLabel}>Fidèles</Text>
+        </View>
+        <View style={styles.stat}>
+          <Text style={styles.statNumber}>{store.following}</Text>
+          <Text style={styles.statLabel}>Fidélisations</Text>
         </View>
       </View>
-    </TouchableOpacity>
+
+      <TouchableOpacity onPress={onPress}>
+        <Image
+          source={{ uri: getDisplayImage() }}
+          style={styles.recentImage}
+          resizeMode="cover"
+        />
+      </TouchableOpacity>
+
+      <Modal
+        visible={showBioModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowBioModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowBioModal(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Biographie du propriétaire</Text>
+            <Text style={styles.modalText}>{ownerBio || 'Aucune biographie disponible.'}</Text>
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => setShowBioModal(false)}
+            >
+              <Text style={styles.modalButtonText}>Fermer</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     backgroundColor: 'white',
-    borderRadius: theme.borderRadius.lg,
-    marginBottom: theme.spacing.md,
-    overflow: 'hidden',
+    borderRadius: 25,
+    padding: 15,
+    marginBottom: 15,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  image: {
-    width: '100%',
-    height: 150,
-  },
-  headerContainer: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    padding: theme.spacing.md,
+    alignItems: 'center',
+    marginBottom: 10,
   },
-  storeInfo: {
+  profileSection: {
+    alignItems: 'center',
     flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  logoContainer: {
+    marginBottom: 8,
+  },
+  logo: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+  },
+  nameSection: {
+    alignItems: 'center',
   },
   name: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 2,
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.text,
+    textAlign: 'center',
+    marginBottom: 4,
   },
-  handle: {
+  username: {
     fontSize: 14,
     color: theme.colors.textSecondary,
-    marginBottom: 2,
+    marginBottom: 4,
+    textAlign: 'center',
   },
-  createdAt: {
+  creationDate: {
     fontSize: 12,
-    color: theme.colors.textSecondary,
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
+    color: theme.colors.textTertiary,
+    textAlign: 'center',
   },
   followButton: {
     backgroundColor: theme.colors.primary,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+    minWidth: 100,
   },
   followingButton: {
-    backgroundColor: theme.colors.secondary,
-  },
-  loadingButton: {
-    opacity: 0.7,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
   },
   followButtonText: {
     color: 'white',
-    fontWeight: '600',
     fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   followingButtonText: {
-    color: 'white',
+    color: theme.colors.primary,
   },
   ownerButton: {
-    backgroundColor: 'transparent',
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.borderRadius.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    backgroundColor: '#2D2D2D',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+    minWidth: 100,
   },
   ownerButtonText: {
-    color: theme.colors.text,
+    color: 'white',
     fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   description: {
     fontSize: 14,
     color: theme.colors.text,
-    paddingHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.md,
+    marginBottom: 15,
+    lineHeight: 20,
   },
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    paddingVertical: theme.spacing.md,
+    marginBottom: 15,
+    paddingVertical: 10,
     borderTopWidth: 1,
     borderBottomWidth: 1,
     borderColor: theme.colors.border,
   },
-  statItem: {
+  stat: {
     alignItems: 'center',
   },
   statNumber: {
     fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 2,
+    fontWeight: '600',
+    color: theme.colors.text,
   },
   statLabel: {
     fontSize: 12,
     color: theme.colors.textSecondary,
+    marginTop: 2,
   },
-  productsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: theme.spacing.xs,
+  recentImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 20,
   },
-  productImage: {
-    width: '33.33%',
-    aspectRatio: 1,
-    padding: theme.spacing.xs,
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 15,
+    padding: 20,
+    width: '90%',
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 15,
+    color: theme.colors.text,
+  },
+  modalText: {
+    fontSize: 16,
+    color: theme.colors.text,
+    marginBottom: 20,
+    lineHeight: 24,
+  },
+  modalButton: {
+    backgroundColor: theme.colors.primary,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '500',
   },
 });

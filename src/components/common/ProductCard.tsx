@@ -3,21 +3,34 @@ import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { Product } from '../../types';
 import { theme } from '../../theme/theme';
 import { useNavigation } from '@react-navigation/native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 interface ProductCardProps {
   product: Product;
+  onPress?: () => void;
+  onDelete?: () => void;
+  onEdit?: () => void;
+  showActions?: boolean;
 }
 
-export const ProductCard = ({ product }: ProductCardProps) => {
+export const ProductCard = ({ product, onPress, onDelete, onEdit, showActions = false }: ProductCardProps) => {
   const navigation = useNavigation();
+
+  const handlePress = () => {
+    if (onPress) {
+      onPress();
+    } else {
+      navigation.navigate('ProductDetails', { productId: product.id });
+    }
+  };
 
   return (
     <TouchableOpacity
       style={styles.container}
-      onPress={() => navigation.navigate('ProductDetails', { productId: product.id })}
+      onPress={handlePress}
     >
       <Image 
-        source={{ uri: product.images[0] }} 
+        source={{ uri: product.images?.[0] }} 
         style={styles.image}
         resizeMode="cover"
       />
@@ -29,6 +42,16 @@ export const ProductCard = ({ product }: ProductCardProps) => {
           ${product.price.toFixed(2)}
         </Text>
       </View>
+      {showActions && (
+        <View style={styles.actions}>
+          <TouchableOpacity onPress={onEdit} style={styles.actionButton}>
+            <Ionicons name="create-outline" size={24} color={theme.colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onDelete} style={styles.actionButton}>
+            <Ionicons name="trash-outline" size={24} color={theme.colors.error} />
+          </TouchableOpacity>
+        </View>
+      )}
     </TouchableOpacity>
   );
 };
@@ -62,5 +85,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: theme.colors.primary,
+  },
+  actions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: theme.spacing.sm,
+  },
+  actionButton: {
+    padding: theme.spacing.xs,
   },
 });

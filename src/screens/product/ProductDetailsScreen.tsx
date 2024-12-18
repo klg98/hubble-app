@@ -12,11 +12,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../services/firebase';
-import { Product, Size, Color } from '../../types';
+import { doc, getDoc, query, collection, where, getDocs, addDoc, deleteDoc } from 'firebase/firestore';
+import { db, auth } from '../../services/firebase';
+import { Product, Size } from '../../types';
 import { theme } from '../../theme/theme';
 import { Button } from '../../components/common/Button';
+import { Alert } from 'react-native';
 
 const { width } = Dimensions.get('window');
 const IMAGE_HEIGHT = width;
@@ -31,11 +32,14 @@ export const ProductDetailsScreen = ({ route, navigation }: ProductDetailsScreen
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedSize, setSelectedSize] = useState<Size | null>(null);
-  const [selectedColor, setSelectedColor] = useState<Color | null>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [isInCart, setIsInCart] = useState(false);
+  const [cartItemId, setCartItemId] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     fetchProduct();
+    checkIfInCart();
   }, [productId]);
 
   const fetchProduct = async () => {
@@ -48,6 +52,31 @@ export const ProductDetailsScreen = ({ route, navigation }: ProductDetailsScreen
       console.error('Error fetching product:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkIfInCart = async () => {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+
+      const cartQuery = query(
+        collection(db, 'cart'),
+        where('userId', '==', userId),
+        where('productId', '==', productId)
+      );
+      const cartSnapshot = await getDocs(cartQuery);
+      
+      if (!cartSnapshot.empty) {
+        const cartItem = cartSnapshot.docs[0];
+        setIsInCart(true);
+        setCartItemId(cartItem.id);
+      } else {
+        setIsInCart(false);
+        setCartItemId(null);
+      }
+    } catch (error) {
+      console.error('Error checking cart:', error);
     }
   };
 
@@ -86,21 +115,51 @@ export const ProductDetailsScreen = ({ route, navigation }: ProductDetailsScreen
     </TouchableOpacity>
   );
 
-  const renderColorButton = (color: Color) => (
-    <TouchableOpacity
-      key={color.name}
-      style={[
-        styles.colorButton,
-        { backgroundColor: color.code },
-        selectedColor?.code === color.code && styles.selectedColorButton,
-      ]}
-      onPress={() => setSelectedColor(color)}
-    >
-      {selectedColor?.code === color.code && (
-        <Ionicons name="checkmark" size={16} color="white" />
-      )}
-    </TouchableOpacity>
-  );
+  const handleAddToCart = async () => {
+    try {
+      if (!selectedSize) {
+        Alert.alert('Erreur', 'Veuillez sélectionner une taille');
+        return;
+      }
+
+      setUpdating(true);
+      const userId = auth.currentUser?.uid;
+      if (!userId || !product) return;
+
+      if (isInCart && cartItemId) {
+        // Retirer du panier
+        await deleteDoc(doc(db, 'cart', cartItemId));
+        setIsInCart(false);
+        setCartItemId(null);
+        Alert.alert('Succès', 'Produit retiré du panier');
+      } else {
+        // Ajouter au panier
+        const cartRef = collection(db, 'cart');
+        const cartItem = {
+          userId,
+          productId: product.id,
+          storeId: product.storeId,
+          name: product.name,
+          price: product.price,
+          image: product.images?.[0],
+          size: selectedSize,
+          quantity: 1,
+          addedAt: Date.now(),
+          updatedAt: Date.now()
+        };
+
+        const docRef = await addDoc(cartRef, cartItem);
+        setIsInCart(true);
+        setCartItemId(docRef.id);
+        Alert.alert('Succès', 'Produit ajouté au panier');
+      }
+    } catch (error) {
+      console.error('Error updating cart:', error);
+      Alert.alert('Erreur', 'Impossible de mettre à jour le panier');
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -189,56 +248,18 @@ export const ProductDetailsScreen = ({ route, navigation }: ProductDetailsScreen
               {product.sizes.map(renderSizeButton)}
             </View>
           </View>
-
-          {/* Colors */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Couleurs disponibles</Text>
-            <View style={styles.colorsContainer}>
-              {product.colors.map(renderColorButton)}
-            </View>
-          </View>
-
-          {/* Additional Details */}
-          {(product.material || product.style || product.measurements) && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Détails</Text>
-              <View style={styles.details}>
-                {product.material && (
-                  <Text style={styles.detailText}>Matière : {product.material}</Text>
-                )}
-                {product.style && (
-                  <Text style={styles.detailText}>Style : {product.style}</Text>
-                )}
-                {product.measurements && (
-                  <View>
-                    <Text style={styles.detailText}>Mensurations :</Text>
-                    {Object.entries(product.measurements).map(([key, value]) => (
-                      <Text key={key} style={styles.measurementText}>
-                        • {key.charAt(0).toUpperCase() + key.slice(1)} : {value} cm
-                      </Text>
-                    ))}
-                  </View>
-                )}
-              </View>
-            </View>
-          )}
         </View>
       </ScrollView>
 
       {/* Add to Cart Button */}
       <View style={styles.footer}>
         <Button
-          onPress={() => {
-            // TODO: Implement add to cart
-            if (!selectedSize || !selectedColor) {
-              // Show error message
-              return;
-            }
-          }}
-          disabled={!selectedSize || !selectedColor}
+          onPress={handleAddToCart}
+          style={styles.addToCartButton}
+          loading={updating}
         >
-          <Text style={styles.buttonText}>
-            Ajouter au panier • {formatPrice(product.price)}
+          <Text style={styles.addToCartButtonText}>
+            {isInCart ? 'Retirer du panier' : 'Ajouter au panier'}
           </Text>
         </Button>
       </View>
@@ -374,43 +395,16 @@ const styles = StyleSheet.create({
   selectedSizeButtonText: {
     color: 'white',
   },
-  colorsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: theme.spacing.sm,
-  },
-  colorButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  selectedColorButton: {
-    borderColor: theme.colors.primary,
-    borderWidth: 2,
-  },
-  details: {
-    gap: theme.spacing.sm,
-  },
-  detailText: {
-    fontSize: 16,
-    color: theme.colors.text,
-  },
-  measurementText: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    marginLeft: theme.spacing.md,
-  },
   footer: {
     padding: theme.spacing.lg,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
     backgroundColor: 'white',
   },
-  buttonText: {
+  addToCartButton: {
+    width: '100%',
+  },
+  addToCartButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',

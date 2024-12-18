@@ -6,22 +6,33 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Image,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../services/firebase';
+import { doc, getDoc, query, collection, where, orderBy, getDocs } from 'firebase/firestore';
+import { db, auth } from '../../services/firebase';
 import { theme } from '../../theme/theme';
-import { Store, StoreMetrics } from '../../types';
+import { Store, StoreMetrics, StoreOrder } from '../../types';
+import { useNavigation } from '@react-navigation/native';
 
-interface StoreDashboardScreenProps {
-  navigation: any;
-  route: {
-    params: {
-      storeId: string;
-    };
-  };
-}
+const formatDate = (timestamp: any) => {
+  if (!timestamp) return 'Date inconnue';
+  const date = new Date(timestamp);
+  return date.toLocaleDateString('fr-FR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+};
+
+const formatPrice = (amount: number) => {
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: 'EUR'
+  }).format(amount || 0);
+};
 
 interface MetricCardProps {
   title: string;
@@ -47,10 +58,17 @@ const MetricCard = ({ title, value, icon, color, onPress }: MetricCardProps) => 
   </TouchableOpacity>
 );
 
-export const StoreDashboardScreen = ({ navigation, route }: StoreDashboardScreenProps) => {
+export const StoreDashboardScreen = () => {
+  const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
   const [store, setStore] = useState<Store | null>(null);
   const [metrics, setMetrics] = useState<StoreMetrics | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    fetchStoreData().finally(() => setRefreshing(false));
+  }, []);
 
   useEffect(() => {
     fetchStoreData();
@@ -58,16 +76,79 @@ export const StoreDashboardScreen = ({ navigation, route }: StoreDashboardScreen
 
   const fetchStoreData = async () => {
     try {
-      const storeDoc = await getDoc(doc(db, 'stores', route.params.storeId));
-      if (storeDoc.exists()) {
-        setStore(storeDoc.data() as Store);
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+
+      // Récupérer le storeId depuis le contexte de l'utilisateur
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      if (!userDoc.exists()) {
+        console.error('User not found');
+        return;
+      }
+      const userData = userDoc.data();
+      const storeId = userData.storeId;
+
+      if (!storeId) {
+        console.error('No store associated with user');
+        return;
       }
 
-      // Fetch metrics (in a real app, this would be a separate collection)
-      const metricsDoc = await getDoc(doc(db, 'stores', route.params.storeId, 'metrics', 'latest'));
-      if (metricsDoc.exists()) {
-        setMetrics(metricsDoc.data() as StoreMetrics);
+      // Récupérer les données de la boutique
+      const storeDoc = await getDoc(doc(db, 'stores', storeId));
+      if (storeDoc.exists()) {
+        setStore({ id: storeDoc.id, ...storeDoc.data() } as Store);
       }
+
+      // Récupérer les produits pour calculer les métriques
+      const productsQuery = query(
+        collection(db, 'products'),
+        where('storeId', '==', storeId)
+      );
+      const productsSnap = await getDocs(productsQuery);
+      const products = productsSnap.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          image: data.images && data.images.length > 0 ? data.images[0] : null
+        };
+      });
+
+      // Récupérer les commandes
+      const ordersQuery = query(
+        collection(db, 'storeOrders'),
+        where('storeId', '==', storeId),
+        orderBy('createdAt', 'desc')
+      );
+
+      const ordersSnapshot = await getDocs(ordersQuery);
+      const orders = ordersSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as StoreOrder[];
+
+      // Calculer les métriques
+      const pendingOrders = orders.filter(order => order.status === 'pending').length;
+      const totalProducts = products.length;
+      const totalOrders = orders.length;
+      const totalSales = orders.reduce((sum, order) => sum + order.subtotal, 0);
+      
+      // Récupérer les commandes récentes
+      const recentOrders = orders.slice(0, 5);
+
+      // Récupérer les produits populaires
+      const topProducts = products
+        .sort((a: any, b: any) => (b.totalSales || 0) - (a.totalSales || 0))
+        .slice(0, 5);
+
+      setMetrics({
+        pendingOrders,
+        totalProducts,
+        totalOrders,
+        totalSales,
+        recentOrders,
+        topProducts
+      });
     } catch (error) {
       console.error('Error fetching store data:', error);
     } finally {
@@ -75,31 +156,110 @@ export const StoreDashboardScreen = ({ navigation, route }: StoreDashboardScreen
     }
   };
 
-  const renderQuickActions = () => (
-    <View style={styles.quickActions}>
-      <TouchableOpacity
-        style={styles.actionButton}
-        onPress={() => navigation.navigate('AddProduct', { storeId: store?.id })}
-      >
-        <Ionicons name="add-circle" size={24} color={theme.colors.primary} />
-        <Text style={styles.actionText}>Ajouter un produit</Text>
-      </TouchableOpacity>
+  const renderMetrics = () => (
+    <View style={styles.metricsContainer}>
+      <View style={styles.metricsRow}>
+        <MetricCard
+          title={'Commandes\nen attente'}
+          value={metrics?.pendingOrders?.toString() || '0'}
+          icon="hourglass"
+          color={theme.colors.warning}
+        />
+        <MetricCard
+          title="Produits"
+          value={metrics?.totalProducts?.toString() || '0'}
+          icon="pricetag"
+          color={theme.colors.info}
+          onPress={() => navigation.navigate('StoreProducts')}
+        />
+      </View>
+      <View style={styles.metricsRow}>
+        <MetricCard
+          title="Commandes"
+          value={metrics?.totalOrders?.toString() || '0'}
+          icon="cart"
+          color={theme.colors.success}
+          onPress={() => navigation.navigate('StoreOrders')}
+        />
+        <MetricCard
+          title="Ventes"
+          value={formatPrice(metrics?.totalSales || 0)}
+          icon="cash"
+          color={theme.colors.primary}
+        />
+      </View>
+    </View>
+  );
 
-      <TouchableOpacity
-        style={styles.actionButton}
-        onPress={() => navigation.navigate('StoreOrders', { storeId: store?.id })}
-      >
-        <Ionicons name="receipt" size={24} color={theme.colors.primary} />
-        <Text style={styles.actionText}>Voir les commandes</Text>
-      </TouchableOpacity>
+  const renderRecentOrders = () => (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Commandes récentes</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('StoreOrders')}>
+          <Text style={styles.seeAllText}>Voir tout</Text>
+        </TouchableOpacity>
+      </View>
 
-      <TouchableOpacity
-        style={styles.actionButton}
-        onPress={() => navigation.navigate('StoreAnalytics', { storeId: store?.id })}
-      >
-        <Ionicons name="stats-chart" size={24} color={theme.colors.primary} />
-        <Text style={styles.actionText}>Statistiques</Text>
-      </TouchableOpacity>
+      {!metrics?.recentOrders?.length ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateText}>Aucune commande récente</Text>
+        </View>
+      ) : (
+        metrics.recentOrders.map((order: any) => (
+          <TouchableOpacity 
+            key={order.id} 
+            style={styles.orderItem}
+            onPress={() => navigation.navigate('StoreOrders')}
+          >
+            <View style={styles.orderHeader}>
+              <Text style={styles.orderId}>#{order.orderId.slice(-8)}</Text>
+              <Text style={styles.orderAmount}>{formatPrice(order.subtotal)}</Text>
+            </View>
+            <Text style={styles.orderDate}>{formatDate(order.createdAt)}</Text>
+          </TouchableOpacity>
+        ))
+      )}
+    </View>
+  );
+
+  const renderTopProducts = () => (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Produits populaires</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('StoreProducts')}>
+          <Text style={styles.seeAllText}>Voir tout</Text>
+        </TouchableOpacity>
+      </View>
+
+      {!metrics?.topProducts?.length ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateText}>Aucun produit</Text>
+        </View>
+      ) : (
+        metrics.topProducts.map((product: any) => (
+          <TouchableOpacity 
+            key={product.id} 
+            style={styles.productItem}
+            onPress={() => navigation.navigate('StoreProducts')}
+          >
+            <Image
+              source={{ uri: product.image || product.images?.[0] }}
+              style={styles.productImage}
+            />
+            <View style={styles.productInfo}>
+              <Text style={styles.productName}>{product.name}</Text>
+              <View style={styles.productStats}>
+                <Text style={styles.productSales}>
+                  {product.totalSales || 0} ventes
+                </Text>
+                <Text style={styles.productRevenue}>
+                  {formatPrice(product.revenue || 0)}
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        ))
+      )}
     </View>
   );
 
@@ -111,120 +271,58 @@ export const StoreDashboardScreen = ({ navigation, route }: StoreDashboardScreen
     );
   }
 
-  if (!store) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Boutique introuvable</Text>
-      </View>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Tableau de bord</Text>
         <TouchableOpacity
-          onPress={() => navigation.navigate('StoreSettings', { storeId: store.id })}
+          onPress={() => navigation.navigate('StoreSettings', { storeId: store?.id })}
         >
           <Ionicons name="settings-outline" size={24} color={theme.colors.text} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView 
+        style={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {/* Quick Actions */}
-        {renderQuickActions()}
+        <View style={styles.quickActions}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('AddProduct', { storeId: store?.id })}
+          >
+            <Ionicons name="add-circle" size={24} color={theme.colors.primary} />
+            <Text style={styles.actionText}>Ajouter un produit</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('StoreOrders', { storeId: store?.id })}
+          >
+            <Ionicons name="receipt" size={24} color={theme.colors.primary} />
+            <Text style={styles.actionText}>Voir les commandes</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('StoreAnalytics', { storeId: store?.id })}
+          >
+            <Ionicons name="stats-chart" size={24} color={theme.colors.primary} />
+            <Text style={styles.actionText}>Statistiques</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Metrics Overview */}
-        <View style={styles.metricsGrid}>
-          <MetricCard
-            title="Ventes"
-            value={`${store.metrics.totalSales}€`}
-            icon="cash"
-            color={theme.colors.success}
-            onPress={() => navigation.navigate('StoreAnalytics', { storeId: store.id })}
-          />
-          <MetricCard
-            title="Commandes"
-            value={store.metrics.totalOrders}
-            icon="cart"
-            color={theme.colors.primary}
-            onPress={() => navigation.navigate('StoreOrders', { storeId: store.id })}
-          />
-          <MetricCard
-            title="Produits"
-            value={store.metrics.totalProducts}
-            icon="pricetag"
-            color={theme.colors.warning}
-            onPress={() => navigation.navigate('StoreProducts', { storeId: store.id })}
-          />
-          <MetricCard
-            title="Note"
-            value={store.metrics.averageRating.toFixed(1)}
-            icon="star"
-            color={theme.colors.secondary}
-          />
-        </View>
+        {renderMetrics()}
 
         {/* Recent Orders */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Commandes récentes</Text>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('StoreOrders', { storeId: store.id })}
-            >
-              <Text style={styles.seeAllText}>Voir tout</Text>
-            </TouchableOpacity>
-          </View>
-
-          {metrics?.recentOrders.map((order) => (
-            <View key={order.id} style={styles.orderItem}>
-              <View>
-                <Text style={styles.orderNumber}>Commande #{order.id}</Text>
-                <Text style={styles.orderDate}>{new Date(order.date).toLocaleDateString()}</Text>
-              </View>
-              <View style={styles.orderRight}>
-                <Text style={styles.orderAmount}>{order.amount}€</Text>
-                <View
-                  style={[
-                    styles.statusBadge,
-                    { backgroundColor: theme.colors[order.status === 'completed' ? 'success' : 'warning'] + '20' },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.statusText,
-                      { color: theme.colors[order.status === 'completed' ? 'success' : 'warning'] },
-                    ]}
-                  >
-                    {order.status}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
+        {renderRecentOrders()}
 
         {/* Top Products */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Meilleurs produits</Text>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('StoreProducts', { storeId: store.id })}
-            >
-              <Text style={styles.seeAllText}>Voir tout</Text>
-            </TouchableOpacity>
-          </View>
-
-          {metrics?.topProducts.map((product) => (
-            <View key={product.id} style={styles.productItem}>
-              <Text style={styles.productName}>{product.name}</Text>
-              <View style={styles.productStats}>
-                <Text style={styles.productSales}>{product.sales} ventes</Text>
-                <Text style={styles.productRevenue}>{product.revenue}€</Text>
-              </View>
-            </View>
-          ))}
-        </View>
+        {renderTopProducts()}
       </ScrollView>
     </SafeAreaView>
   );
@@ -233,27 +331,19 @@ export const StoreDashboardScreen = ({ navigation, route }: StoreDashboardScreen
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorText: {
-    fontSize: 16,
-    color: theme.colors.error,
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: theme.spacing.lg,
+    backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
@@ -269,6 +359,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     padding: theme.spacing.lg,
+    backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
@@ -280,19 +371,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: theme.colors.text,
   },
-  metricsGrid: {
+  metricsContainer: {
+    padding: theme.spacing.lg,
+    backgroundColor: 'white',
+  },
+  metricsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: theme.spacing.md,
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.md,
   },
   metricCard: {
     width: '48%',
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.lg,
     padding: theme.spacing.lg,
-    borderRadius: theme.borderRadius.md,
-    marginBottom: theme.spacing.md,
-    marginHorizontal: '1%',
     borderLeftWidth: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -300,10 +396,15 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   metricIcon: {
-    marginBottom: theme.spacing.sm,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   metricValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     color: theme.colors.text,
   },
@@ -312,13 +413,15 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
   },
   section: {
+    marginTop: theme.spacing.lg,
+    backgroundColor: 'white',
     padding: theme.spacing.lg,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
   },
   sectionTitle: {
     fontSize: 18,
@@ -328,67 +431,75 @@ const styles = StyleSheet.create({
   seeAllText: {
     color: theme.colors.primary,
     fontSize: 14,
+    fontWeight: '500',
+  },
+  emptyState: {
+    padding: theme.spacing.xl,
+    alignItems: 'center',
+  },
+  emptyStateText: {
+    color: theme.colors.textSecondary,
+    fontSize: 14,
   },
   orderItem: {
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.lg,
+    marginBottom: theme.spacing.md,
+  },
+  orderHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: theme.spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    marginBottom: theme.spacing.sm,
   },
-  orderNumber: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: theme.colors.text,
-  },
-  orderDate: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
-  orderRight: {
-    alignItems: 'flex-end',
-  },
-  orderAmount: {
+  orderId: {
     fontSize: 16,
     fontWeight: '600',
     color: theme.colors.text,
   },
-  statusBadge: {
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 4,
-    borderRadius: theme.borderRadius.full,
-    marginTop: 4,
+  orderAmount: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.success,
   },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '500',
+  orderDate: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
   },
   productItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: theme.spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.lg,
+    marginBottom: theme.spacing.md,
+  },
+  productImage: {
+    width: 60,
+    height: 60,
+    borderRadius: theme.borderRadius.md,
+    marginRight: theme.spacing.md,
+  },
+  productInfo: {
+    flex: 1,
+    justifyContent: 'center',
   },
   productName: {
     fontSize: 16,
+    fontWeight: '500',
     color: theme.colors.text,
-    flex: 1,
+    marginBottom: theme.spacing.xs,
   },
   productStats: {
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   productSales: {
     fontSize: 14,
     color: theme.colors.textSecondary,
   },
   productRevenue: {
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '600',
     color: theme.colors.success,
-    marginTop: 2,
   },
 });

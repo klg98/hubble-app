@@ -23,7 +23,17 @@ import { CreateStoreScreen } from '../screens/store/CreateStoreScreen';
 import { StoreDashboardScreen } from '../screens/store/StoreDashboardScreen';
 import { StoreProfileScreen } from '../screens/store/StoreProfileScreen';
 import { AddEditProductScreen } from '../screens/store/AddEditProductScreen';
-import { ActivityIndicator, View } from 'react-native';
+import { EditProductScreen } from '../screens/store/EditProductScreen';
+import { ActivityIndicator, View, TouchableOpacity } from 'react-native';
+import { AddressesScreen } from '../screens/profile/AddressesScreen';
+import { PaymentMethodsScreen } from '../screens/profile/PaymentMethodsScreen';
+import { ActiveOrdersScreen } from '../screens/profile/ActiveOrdersScreen';
+import { OrderHistoryScreen } from '../screens/profile/OrderHistoryScreen';
+import { NotificationSettingsScreen } from '../screens/profile/NotificationSettingsScreen';
+import { PrivacyScreen } from '../screens/profile/PrivacyScreen';
+import { HelpScreen } from '../screens/profile/HelpScreen';
+import { StoreProductsScreen } from '../screens/store/StoreProductsScreen';
+import { StoreOrdersScreen } from '../screens/store/StoreOrdersScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const HomeStack = createNativeStackNavigator<HomeStackParamList>();
@@ -35,7 +45,7 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 const HomeStackNavigator = () => {
   return (
     <HomeStack.Navigator screenOptions={{ headerShown: false }}>
-      <HomeStack.Screen name="HomeScreen" component={HomeScreen} />
+      <HomeStack.Screen name="Home" component={HomeScreen} />
       <HomeStack.Screen name="StoreDetails" component={StoreDetailsScreen} />
       <HomeStack.Screen name="ProductDetails" component={ProductDetailsScreen} />
     </HomeStack.Navigator>
@@ -55,18 +65,139 @@ const AuthStackNavigator = () => {
 
 const ProfileStackNavigator = () => {
   return (
-    <ProfileStack.Navigator screenOptions={{ headerShown: false }}>
-      <ProfileStack.Screen name="Profile" component={ProfileScreen} />
-      <ProfileStack.Screen name="EditProfile" component={EditProfileScreen} />
-      <ProfileStack.Screen name="CreateStore" component={CreateStoreScreen} />
-      <ProfileStack.Screen name="StoreDashboard" component={StoreDashboardScreen} />
-      <ProfileStack.Screen name="AddProduct" component={AddEditProductScreen} />
+    <ProfileStack.Navigator 
+      screenOptions={{ 
+        headerShown: true,
+        headerStyle: {
+          backgroundColor: theme.colors.background,
+        },
+        headerTintColor: theme.colors.text,
+        headerTitleStyle: {
+          fontWeight: '600',
+        },
+      }}
+    >
+      <ProfileStack.Screen 
+        name="Profile" 
+        component={ProfileScreen}
+        options={{ 
+          headerShown: false 
+        }}
+      />
+      <ProfileStack.Screen 
+        name="EditProfile" 
+        component={EditProfileScreen}
+        options={{ 
+          title: 'Modifier le profil' 
+        }}
+      />
+      <ProfileStack.Screen 
+        name="CreateStore" 
+        component={CreateStoreScreen}
+        options={{ 
+          title: 'Créer une boutique' 
+        }}
+      />
+      <ProfileStack.Screen 
+        name="StoreDashboard" 
+        component={StoreDashboardScreen}
+        options={{ 
+          title: 'Tableau de bord',
+          headerBackTitle: 'Retour au profil'
+        }}
+      />
+      <ProfileStack.Screen 
+        name="StoreProducts" 
+        component={StoreProductsScreen}
+        options={{ 
+          title: 'Mes produits' 
+        }}
+      />
+      <ProfileStack.Screen 
+        name="StoreOrders" 
+        component={StoreOrdersScreen}
+        options={{ 
+          title: 'Commandes' 
+        }}
+      />
+      <ProfileStack.Screen 
+        name="AddProduct" 
+        component={AddEditProductScreen}
+        options={{ 
+          title: 'Ajouter un produit' 
+        }}
+      />
       <ProfileStack.Screen 
         name="EditProduct" 
-        component={AddEditProductScreen}
-        initialParams={{ mode: 'edit' }}
+        component={EditProductScreen}
+        options={({ navigation }) => ({
+          title: 'Modifier le produit',
+          headerLeft: () => (
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={{ marginLeft: 16 }}
+            >
+              <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+            </TouchableOpacity>
+          ),
+        })}
       />
-      <ProfileStack.Screen name="StoreProfile" component={StoreProfileScreen} />
+      <ProfileStack.Screen 
+        name="StoreProfile" 
+        component={StoreProfileScreen}
+        options={{ 
+          title: 'Profil de la boutique' 
+        }}
+      />
+      <ProfileStack.Screen 
+        name="Addresses" 
+        component={AddressesScreen}
+        options={{ 
+          title: 'Mes adresses' 
+        }}
+      />
+      <ProfileStack.Screen 
+        name="PaymentMethods" 
+        component={PaymentMethodsScreen}
+        options={{ 
+          title: 'Moyens de paiement' 
+        }}
+      />
+      <ProfileStack.Screen 
+        name="ActiveOrders" 
+        component={ActiveOrdersScreen}
+        options={{ 
+          title: 'Commandes en cours' 
+        }}
+      />
+      <ProfileStack.Screen 
+        name="OrderHistory" 
+        component={OrderHistoryScreen}
+        options={{ 
+          title: 'Historique des commandes' 
+        }}
+      />
+      <ProfileStack.Screen 
+        name="NotificationSettings" 
+        component={NotificationSettingsScreen}
+        options={{ 
+          title: 'Notifications' 
+        }}
+      />
+      <ProfileStack.Screen 
+        name="Privacy" 
+        component={PrivacyScreen}
+        options={{ 
+          title: 'Confidentialité' 
+        }}
+      />
+      <ProfileStack.Screen 
+        name="Help" 
+        component={HelpScreen}
+        options={{ 
+          title: 'Aide' 
+        }}
+      />
     </ProfileStack.Navigator>
   );
 };
@@ -78,13 +209,13 @@ const TabNavigator = () => {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: keyof typeof Ionicons.glyphMap = 'home';
 
-          if (route.name === 'Home') {
+          if (route.name === 'HomeTab') {
             iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Search') {
+          } else if (route.name === 'SearchTab') {
             iconName = focused ? 'search' : 'search-outline';
-          } else if (route.name === 'Cart') {
+          } else if (route.name === 'CartTab') {
             iconName = focused ? 'cart' : 'cart-outline';
-          } else if (route.name === 'Profile') {
+          } else if (route.name === 'ProfileTab') {
             iconName = focused ? 'person' : 'person-outline';
           }
 
@@ -95,12 +226,15 @@ const TabNavigator = () => {
       })}
     >
       <Tab.Screen
-        name="Home"
+        name="HomeTab"
         component={HomeStackNavigator}
-        options={{ headerShown: false }}
+        options={{ 
+          headerShown: false,
+          title: 'Accueil'
+        }}
       />
       <Tab.Screen
-        name="Search"
+        name="SearchTab"
         component={SearchScreen}
         options={{
           headerShown: false,
@@ -108,7 +242,7 @@ const TabNavigator = () => {
         }}
       />
       <Tab.Screen
-        name="Cart"
+        name="CartTab"
         component={CartScreen}
         options={{
           headerShown: false,
@@ -116,7 +250,7 @@ const TabNavigator = () => {
         }}
       />
       <Tab.Screen
-        name="Profile"
+        name="ProfileTab"
         component={ProfileStackNavigator}
         options={{
           headerShown: false,

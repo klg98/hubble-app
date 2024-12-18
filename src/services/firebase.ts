@@ -11,12 +11,14 @@ import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyASfGmAj1an5U6RDLpP8A9cHI5dI--7u5I",
-  authDomain: "enterpro-7cd93.firebaseapp.com",
-  projectId: "enterpro-7cd93",
-  storageBucket: "enterpro-7cd93.firebasestorage.app",
-  messagingSenderId: "1072747909680",
-  appId: "1:1072747909680:web:37543ed340a58263b893f5"
+  apiKey: "AIzaSyAkR0yM8zK7SRRaQtnFG6oRDZt6cNcL3Hw",
+  authDomain: "ssenger-b3dc2.firebaseapp.com",
+  databaseURL: "https://ssenger-b3dc2-default-rtdb.firebaseio.com",
+  projectId: "ssenger-b3dc2",
+  storageBucket: "ssenger-b3dc2.appspot.com",
+  messagingSenderId: "162162910144",
+  appId: "1:162162910144:web:b52c7341e00d1f06d9de25",
+  measurementId: "G-YQT4H2TN44"
 };
 
 // Initialize Firebase

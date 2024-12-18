@@ -133,95 +133,117 @@ export const StoreDetailsScreen = ({ route, navigation }: any) => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        stickyHeaderIndices={[1]}
-      >
-        {/* Header Image */}
-        <View style={styles.headerContainer}>
-          <Image
-            source={{ uri: store.imageUrl }}
-            style={styles.headerImage}
-            resizeMode="cover"
-          />
+    <SafeAreaView edges={['bottom']} style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.headerTopBar}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="arrow-back" size={24} color="white" />
+            <Ionicons name="chevron-back" size={24} color="black" />
           </TouchableOpacity>
-        </View>
-
-        {/* Store Info Header */}
-        <View style={styles.storeInfoHeader}>
-          <View style={styles.storeInfo}>
-            <Text style={styles.storeName}>{store.name}</Text>
-            <Text style={styles.storeHandle}>@{store.handle}</Text>
-            <Text style={styles.storeDate}>{formatDate(store.createdAt)}</Text>
-          </View>
-
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[
-                styles.followButton,
-                isFollowing && styles.followingButton,
-                loadingFollow && styles.loadingButton
-              ]}
-              onPress={handleFollow}
-              disabled={loadingFollow}
-            >
-              <Text style={[
-                styles.followButtonText,
-                isFollowing && styles.followingButtonText
-              ]}>
-                {isFollowing ? 'Fidélisé' : 'Se fidéliser'}
-              </Text>
+          
+          <View style={styles.headerRightButtons}>
+            <TouchableOpacity style={styles.iconButton}>
+              <Ionicons name="scan-outline" size={24} color="black" />
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.ownerButton}
-              onPress={() => setShowOwnerBio(true)}
-            >
-              <Text style={styles.ownerButtonText}>Propriétaire</Text>
+            <TouchableOpacity style={styles.iconButton}>
+              <Ionicons name="search" size={24} color="black" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconButton}>
+              <Ionicons name="ellipsis-vertical" size={24} color="black" />
             </TouchableOpacity>
           </View>
         </View>
+      </View>
 
-        {/* Store Description */}
-        <View style={styles.descriptionContainer}>
-          <Text style={styles.description}>{store.description}</Text>
-        </View>
+      <ScrollView style={styles.scrollView}>
+        <View style={styles.content}>
+          {store.bannerImage ? (
+            <Image
+              source={{ uri: store.bannerImage }}
+              style={styles.bannerImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.spacer} />
+          )}
 
-        {/* Store Stats */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{store.products}</Text>
-            <Text style={styles.statLabel}>Articles</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{store.followers}</Text>
-            <Text style={styles.statLabel}>Fidèles</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{store.following}</Text>
-            <Text style={styles.statLabel}>Fidélisations</Text>
-          </View>
-        </View>
+          <View style={styles.profileSection}>
+            <View style={styles.profileHeader}>
+              <View style={styles.profileImageContainer}>
+                <Image
+                  source={{ uri: store.logo }}
+                  style={styles.profileImage}
+                />
+              </View>
+            </View>
 
-        {/* Products Grid */}
-        <View style={styles.productsContainer}>
-          <Text style={styles.productsTitle}>Articles</Text>
-          <View style={styles.productsGrid}>
-            {products.map(product => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                onPress={() => navigation.navigate('ProductDetails', { productId: product.id })}
-              />
-            ))}
+            <View style={styles.storeInfoSection}>
+              <View style={styles.nameSection}>
+                <Text style={styles.name}>{store.name}</Text>
+                <Text style={styles.username}>@{store.username}</Text>
+                <Text style={styles.creationDate}>
+                  {formatDate(store.createdAt)}
+                </Text>
+              </View>
+
+              <View style={styles.actionButtons}>
+                <TouchableOpacity
+                  style={[
+                    styles.followButton,
+                    isFollowing && styles.followingButton
+                  ]}
+                  onPress={handleFollow}
+                  disabled={loading}
+                >
+                  <Text style={[
+                    styles.followButtonText,
+                    isFollowing && styles.followingButtonText
+                  ]}>
+                    {isFollowing ? 'Fidélisé' : 'Se fidéliser'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.ownerButton}
+                  onPress={() => setShowOwnerBio(true)}
+                >
+                  <Text style={styles.ownerButtonText}>Propriétaire</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.description}>{store.description}</Text>
+
+              <View style={styles.statsContainer}>
+                <View style={styles.stat}>
+                  <Text style={styles.statNumber}>{store.metrics.totalProducts}</Text>
+                  <Text style={styles.statLabel}>Articles</Text>
+                </View>
+                <View style={styles.stat}>
+                  <Text style={styles.statNumber}>{store.followers}</Text>
+                  <Text style={styles.statLabel}>Fidèles</Text>
+                </View>
+                <View style={styles.stat}>
+                  <Text style={styles.statNumber}>{store.following}</Text>
+                  <Text style={styles.statLabel}>Fidélisations</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Products Grid */}
+          <View style={styles.productsContainer}>
+            <Text style={styles.productsTitle}>Articles</Text>
+            <View style={styles.productsGrid}>
+              {products.map(product => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onPress={() => navigation.navigate('ProductDetails', { productId: product.id })}
+                />
+              ))}
+            </View>
           </View>
         </View>
       </ScrollView>
@@ -253,107 +275,138 @@ export const StoreDetailsScreen = ({ route, navigation }: any) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerContainer: {
-    height: HEADER_HEIGHT,
-    position: 'relative',
-  },
-  headerImage: {
-    width: '100%',
-    height: '100%',
-  },
-  backButton: {
-    position: 'absolute',
-    top: theme.spacing.lg,
-    left: theme.spacing.lg,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  storeInfoHeader: {
     backgroundColor: 'white',
-    padding: theme.spacing.lg,
+  },
+  header: {
+    backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
-  storeInfo: {
-    marginBottom: theme.spacing.md,
+  headerTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    paddingTop: 50,
   },
-  storeName: {
-    fontSize: 24,
+  headerRightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  content: {
+    flex: 1,
+  },
+  spacer: {
+    height: 40,
+  },
+  bannerImage: {
+    width: '100%',
+    height: 200,
+  },
+  profileSection: {
+    padding: 15,
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 15,
+  },
+  profileImageContainer: {
+    marginTop: -40,
+    backgroundColor: 'white',
+    padding: 3,
+    borderRadius: 44,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  profileImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 4,
+    borderColor: 'white',
+  },
+  storeInfoSection: {
+    marginTop: 10,
+  },
+  nameSection: {
+    marginBottom: 15,
+  },
+  name: {
+    fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 4,
   },
-  storeHandle: {
+  username: {
     fontSize: 16,
     color: theme.colors.textSecondary,
     marginBottom: 4,
   },
-  storeDate: {
+  creationDate: {
     fontSize: 14,
     color: theme.colors.textSecondary,
   },
-  buttonContainer: {
+  actionButtons: {
     flexDirection: 'row',
-    gap: theme.spacing.md,
+    alignItems: 'center',
+    gap: 15,
+    marginBottom: 15,
   },
   followButton: {
-    flex: 1,
     backgroundColor: theme.colors.primary,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.borderRadius.sm,
-    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    minWidth: 120,
   },
   followingButton: {
-    backgroundColor: theme.colors.secondary,
-  },
-  loadingButton: {
-    opacity: 0.7,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
   },
   followButtonText: {
     color: 'white',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '500',
+    textAlign: 'center',
   },
   followingButtonText: {
-    color: 'white',
+    color: theme.colors.primary,
   },
   ownerButton: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.borderRadius.sm,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    backgroundColor: '#2D2D2D',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    minWidth: 120,
   },
   ownerButtonText: {
-    color: theme.colors.text,
+    color: 'white',
     fontSize: 16,
-  },
-  descriptionContainer: {
-    backgroundColor: 'white',
-    padding: theme.spacing.lg,
-    marginTop: theme.spacing.md,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   description: {
     fontSize: 16,
     lineHeight: 24,
     color: theme.colors.text,
+    marginBottom: 15,
   },
   statsContainer: {
     flexDirection: 'row',
@@ -364,7 +417,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: theme.colors.border,
   },
-  statItem: {
+  stat: {
     flex: 1,
     alignItems: 'center',
   },
@@ -424,5 +477,15 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
