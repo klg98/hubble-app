@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, increment, runTransaction, collection } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../services/firebase';
 import { theme } from '../../theme/theme';
@@ -30,15 +30,26 @@ interface AddEditProductScreenProps {
 }
 
 const CONDITIONS = ['new', 'like-new', 'good', 'fair'] as const;
-const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+const LETTER_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+const NUMBER_SIZES = ['27', '28', '30', '32', '33', '34', '36', '38', '40', '42', '44', '46', '48', '50', '52'];
 const CATEGORIES = [
-  'Vêtements',
+  'Chemises',
+  'Polos',
+  'T-Shirts',
+  'Pulls',
+  'Jeans',
+  'Pantalons',
+  'Culottes',
+  'Sous-vêtements',
+  'Robes',
+  'Jupes',
+  'Combinaisons',
+  'Vestes',
   'Chaussures',
   'Accessoires',
   'Sacs',
   'Bijoux',
   'Sport',
-  'Vintage',
 ];
 
 export const AddEditProductScreen = ({ navigation, route }: AddEditProductScreenProps) => {
@@ -62,12 +73,23 @@ export const AddEditProductScreen = ({ navigation, route }: AddEditProductScreen
     specifications: {},
     measurements: {},
   });
+  const [sizeType, setSizeType] = useState<'letter' | 'number' | null>(null);
 
   useEffect(() => {
     if (route.params.productId) {
       fetchProduct();
     }
   }, []);
+
+  useEffect(() => {
+    if (productData.sizes && productData.sizes.length > 0) {
+      if (LETTER_SIZES.includes(productData.sizes[0])) {
+        setSizeType('letter');
+      } else if (NUMBER_SIZES.includes(productData.sizes[0])) {
+        setSizeType('number');
+      }
+    }
+  }, [productData.sizes]);
 
   const fetchProduct = async () => {
     try {
@@ -130,39 +152,75 @@ export const AddEditProductScreen = ({ navigation, route }: AddEditProductScreen
 
   const handleSave = async () => {
     try {
+      // Validation du nom
       if (!productData.name?.trim()) {
         Alert.alert('Erreur', 'Le nom du produit est obligatoire');
         return;
       }
 
+      // Validation du prix
       if (!productData.price || productData.price <= 0) {
         Alert.alert('Erreur', 'Le prix doit être supérieur à 0');
         return;
       }
 
+      // Validation des images
       if (images.length === 0) {
-        Alert.alert('Erreur', 'Ajoutez au moins une image');
+        Alert.alert('Erreur', 'Vous devez ajouter au moins une image');
+        return;
+      }
+
+      // Validation de la catégorie
+      if (!productData.category) {
+        Alert.alert('Erreur', 'Vous devez sélectionner une catégorie');
+        return;
+      }
+
+      // Validation des tailles
+      if (!productData.sizes || productData.sizes.length === 0) {
+        Alert.alert('Erreur', 'Vous devez sélectionner au moins une taille');
+        return;
+      }
+
+      // Validation du stock
+      if (!productData.stock || productData.stock <= 0) {
+        Alert.alert('Erreur', 'Le stock disponible doit être supérieur à 0');
         return;
       }
 
       setSaving(true);
       const uploadedImages = await uploadImages();
 
-      const productId = route.params.productId || doc(db, 'products').id;
-      const product: StoreProduct = {
-        id: productId,
-        storeId: route.params.storeId,
-        images: uploadedImages,
-        createdAt: route.params.productId ? productData.createdAt! : Date.now(),
-        updatedAt: Date.now(),
-        ...productData,
-      } as StoreProduct;
+      // Créer une référence correcte pour un nouveau document
+      const productId = route.params.productId || doc(collection(db, 'products')).id;
 
-      if (route.params.productId) {
-        await updateDoc(doc(db, 'products', productId), product);
-      } else {
-        await setDoc(doc(db, 'products', productId), product);
-      }
+      // Nettoyer les données du produit en retirant les valeurs undefined
+      const cleanProductData = Object.fromEntries(
+        Object.entries({
+          ...productData,
+          id: productId,
+          storeId: route.params.storeId,
+          images: uploadedImages,
+          createdAt: route.params.productId ? productData.createdAt! : Date.now(),
+          updatedAt: Date.now(),
+        }).filter(([_, value]) => value !== undefined)
+      );
+
+      // Utiliser une transaction pour garantir la cohérence des données
+      await runTransaction(db, async (transaction) => {
+        // Mise à jour ou création du produit
+        const productRef = doc(db, 'products', productId);
+        if (route.params.productId) {
+          transaction.update(productRef, cleanProductData);
+        } else {
+          transaction.set(productRef, cleanProductData);
+          // Incrémenter totalProducts uniquement lors de la création d'un nouveau produit
+          const storeRef = doc(db, 'stores', route.params.storeId);
+          transaction.update(storeRef, {
+            totalProducts: increment(1)
+          });
+        }
+      });
 
       navigation.goBack();
     } catch (error) {
@@ -170,6 +228,35 @@ export const AddEditProductScreen = ({ navigation, route }: AddEditProductScreen
       Alert.alert('Erreur', 'Impossible de sauvegarder le produit');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSizeSelect = (size: string, type: 'letter' | 'number') => {
+    if (sizeType && sizeType !== type) {
+      // Si on change de type de taille, on réinitialise la sélection
+      setProductData(prev => ({
+        ...prev,
+        sizes: [size],
+      }));
+      setSizeType(type);
+    } else {
+      setProductData(prev => {
+        const newSizes = prev.sizes?.includes(size)
+          ? prev.sizes.filter(s => s !== size)
+          : [...(prev.sizes || []), size];
+        
+        // Si on désélectionne toutes les tailles, on réinitialise le type
+        if (newSizes.length === 0) {
+          setSizeType(null);
+        } else if (!sizeType) {
+          setSizeType(type);
+        }
+        
+        return {
+          ...prev,
+          sizes: newSizes,
+        };
+      });
     }
   };
 
@@ -209,7 +296,7 @@ export const AddEditProductScreen = ({ navigation, route }: AddEditProductScreen
       <ScrollView style={styles.content}>
         {/* Images */}
         <View style={styles.section}>
-          <Text style={styles.label}>Images du produit</Text>
+          <Text style={styles.label}>Images du produit *</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -292,7 +379,7 @@ export const AddEditProductScreen = ({ navigation, route }: AddEditProductScreen
 
         {/* Category */}
         <View style={styles.section}>
-          <Text style={styles.label}>Catégorie</Text>
+          <Text style={styles.label}>Catégorie *</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -322,39 +409,68 @@ export const AddEditProductScreen = ({ navigation, route }: AddEditProductScreen
 
         {/* Sizes */}
         <View style={styles.section}>
-          <Text style={styles.label}>Tailles disponibles</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.tagsContainer}
-          >
-            {SIZES.map((size) => (
-              <TouchableOpacity
-                key={size}
-                style={[
-                  styles.tag,
-                  productData.sizes?.includes(size) && styles.selectedTag,
-                ]}
-                onPress={() => {
-                  setProductData((prev) => ({
-                    ...prev,
-                    sizes: prev.sizes?.includes(size)
-                      ? prev.sizes.filter((s) => s !== size)
-                      : [...(prev.sizes || []), size],
-                  }));
-                }}
-              >
-                <Text
+          <Text style={styles.label}>Tailles disponibles *</Text>
+          <View>
+            <Text style={styles.subLabel}>Tailles lettres</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.tagsContainer}
+            >
+              {LETTER_SIZES.map((size) => (
+                <TouchableOpacity
+                  key={size}
                   style={[
-                    styles.tagText,
-                    productData.sizes?.includes(size) && styles.selectedTagText,
+                    styles.tag,
+                    productData.sizes?.includes(size) && styles.selectedTag,
+                    (!sizeType || sizeType === 'letter') ? {} : styles.disabledTag,
                   ]}
+                  onPress={() => handleSizeSelect(size, 'letter')}
+                  disabled={sizeType === 'number'}
                 >
-                  {size}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+                  <Text
+                    style={[
+                      styles.tagText,
+                      productData.sizes?.includes(size) && styles.selectedTagText,
+                      sizeType === 'number' && styles.disabledTagText,
+                    ]}
+                  >
+                    {size}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <Text style={[styles.subLabel, { marginTop: theme.spacing.md }]}>Tailles chiffres</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.tagsContainer}
+            >
+              {NUMBER_SIZES.map((size) => (
+                <TouchableOpacity
+                  key={size}
+                  style={[
+                    styles.tag,
+                    productData.sizes?.includes(size) && styles.selectedTag,
+                    (!sizeType || sizeType === 'number') ? {} : styles.disabledTag,
+                  ]}
+                  onPress={() => handleSizeSelect(size, 'number')}
+                  disabled={sizeType === 'letter'}
+                >
+                  <Text
+                    style={[
+                      styles.tagText,
+                      productData.sizes?.includes(size) && styles.selectedTagText,
+                      sizeType === 'letter' && styles.disabledTagText,
+                    ]}
+                  >
+                    {size}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
         </View>
 
         {/* Condition */}
@@ -395,7 +511,7 @@ export const AddEditProductScreen = ({ navigation, route }: AddEditProductScreen
 
         {/* Stock */}
         <View style={styles.section}>
-          <Text style={styles.label}>Stock disponible</Text>
+          <Text style={styles.label}>Stock disponible *</Text>
           <TextInput
             style={styles.input}
             value={productData.stock?.toString()}
@@ -519,5 +635,17 @@ const styles = StyleSheet.create({
   },
   selectedTagText: {
     color: 'white',
+  },
+  subLabel: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.sm,
+  },
+  disabledTag: {
+    backgroundColor: theme.colors.background,
+    opacity: 0.5,
+  },
+  disabledTagText: {
+    color: theme.colors.textSecondary,
   },
 });

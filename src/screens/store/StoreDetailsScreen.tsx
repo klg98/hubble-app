@@ -217,7 +217,7 @@ export const StoreDetailsScreen = ({ route, navigation }: any) => {
 
               <View style={styles.statsContainer}>
                 <View style={styles.stat}>
-                  <Text style={styles.statNumber}>{store.metrics.totalProducts}</Text>
+                  <Text style={styles.statNumber}>{store.totalProducts}</Text>
                   <Text style={styles.statLabel}>Articles</Text>
                 </View>
                 <View style={styles.stat}>

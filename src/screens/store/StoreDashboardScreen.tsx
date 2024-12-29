@@ -16,6 +16,7 @@ import { db, auth } from '../../services/firebase';
 import { theme } from '../../theme/theme';
 import { Store, StoreMetrics, StoreOrder } from '../../types';
 import { useNavigation } from '@react-navigation/native';
+import { formatPrice } from '../../utils/formatters';
 
 const formatDate = (timestamp: any) => {
   if (!timestamp) return 'Date inconnue';
@@ -25,13 +26,6 @@ const formatDate = (timestamp: any) => {
     month: 'long',
     day: 'numeric'
   });
-};
-
-const formatPrice = (amount: number) => {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR'
-  }).format(amount || 0);
 };
 
 interface MetricCardProps {

@@ -29,6 +29,7 @@ import { theme } from '../../theme/theme';
 import { CartItem, Product, StoreOrder, Order, OrderItem } from '../../types';
 import { CartItemComponent } from '../../components/cart/CartItem';
 import { Button } from '../../components/common/Button';
+import { formatPrice } from '../../utils/formatters';
 
 // Fonction de génération d'ID unique
 const generateId = () => {
@@ -130,13 +131,6 @@ export const CartScreen = () => {
     }, 0);
   };
 
-  const formatPrice = (price: number) => {
-    return price.toLocaleString('fr-FR', {
-      style: 'currency',
-      currency: 'EUR',
-    });
-  };
-
   const handleCreateOrder = async () => {
     try {
       if (!auth.currentUser) return;
@@ -149,6 +143,26 @@ export const CartScreen = () => {
         return;
       }
       const userData = userDoc.data();
+      
+      console.log('userData complet:', userData);
+      console.log('addresses:', userData?.addresses);
+      console.log('geolocation:', userData?.addresses?.geolocation);
+
+      // Créer un objet location avec les coordonnées
+      const geolocation = userData?.addresses?.geolocation ? {
+        address: userData.addresses.geolocation.address,
+        latitude: userData.addresses.geolocation.latitude,
+        longitude: userData.addresses.geolocation.longitude
+      } : null;
+
+      console.log('Objet geolocation créé:', geolocation);
+
+      // Vérifier si l'objet geolocation est valide
+      if (!geolocation) {
+        console.log('Attention: geolocation est null');
+      } else if (!geolocation.latitude || !geolocation.longitude) {
+        console.log('Attention: latitude ou longitude manquante dans geolocation');
+      }
 
       // Créer une nouvelle commande principale
       const orderId = generateId();
@@ -180,11 +194,11 @@ export const CartScreen = () => {
           createdAt: Date.now(),
           updatedAt: Date.now(),
           customerInfo: {
-            name: userData.displayName || '',
+            name: userData.fullName || '',
             phone: userData.phone || '',
             email: userData.email || '',
             address: userData.address || '',
-            location: userData.location || null,
+            location: geolocation
           },
         };
 

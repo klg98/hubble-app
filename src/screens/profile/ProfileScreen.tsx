@@ -55,7 +55,7 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
       if (userDoc.exists()) {
         const data = userDoc.data();
         setProfileData({
-          displayName: data.displayName || '',
+          displayName: data.fullName || '',
           email: auth.currentUser?.email || '',
           phoneNumber: data.phoneNumber || '',
           bio: data.bio || '',

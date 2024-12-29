@@ -16,6 +16,7 @@ import { StoreOrder, OrderStatus } from '../../types';
 import { Button } from '../../components/common/Button';
 import { Linking } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { formatPrice } from '../../utils/formatters';
 
 export const StoreOrdersScreen = () => {
   const [orders, setOrders] = useState<StoreOrder[]>([]);
@@ -133,13 +134,6 @@ export const StoreOrdersScreen = () => {
     }
   };
 
-  const formatPrice = (price: number) => {
-    return price.toLocaleString('fr-FR', {
-      style: 'currency',
-      currency: 'EUR',
-    });
-  };
-
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString('fr-FR', {
       day: 'numeric',
@@ -153,11 +147,11 @@ export const StoreOrdersScreen = () => {
   const getStatusColor = (status: OrderStatus) => {
     switch (status) {
       case 'pending':
-        return theme.colors.warning;
+        return theme.colors.primary;
       case 'processing':
-        return theme.colors.success;
+        return theme.colors.confirmed;
       case 'shipped':
-        return theme.colors.success;
+        return theme.colors.dark;
       default:
         return theme.colors.textSecondary;
     }
@@ -235,14 +229,14 @@ export const StoreOrdersScreen = () => {
               <Button
                 title="Accepter"
                 onPress={() => handleUpdateStatus(order.id, 'processing')}
-                style={[styles.actionButton, { backgroundColor: theme.colors.success }]}
+                style={[styles.actionButton, { backgroundColor: theme.colors.confirmed }]}
               />
             )}
             {order.status === 'processing' && (
               <Button
                 title="Expédier"
                 onPress={() => handleUpdateStatus(order.id, 'shipped')}
-                style={[styles.actionButton, { backgroundColor: theme.colors.primary }]}
+                style={[styles.actionButton, { backgroundColor: theme.colors.dark }]}
               />
             )}
           </View>

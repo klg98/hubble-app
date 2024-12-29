@@ -13,6 +13,7 @@ import { theme } from '../../theme/theme';
 import { CartItem as CartItemType } from '../../types';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
+import { formatPrice } from '../../utils/formatters';
 
 interface CartItemProps {
   item: CartItemType;
@@ -48,14 +49,6 @@ export const CartItemComponent = ({
     } finally {
       setLoading(false);
     }
-  };
-
-  const formatPrice = (price: number | undefined) => {
-    if (typeof price === 'undefined') return '0 €';
-    return price.toLocaleString('fr-FR', {
-      style: 'currency',
-      currency: 'EUR',
-    });
   };
 
   const isMaxQuantity = stock !== null && item.quantity >= stock;

@@ -4,6 +4,7 @@ import { Product } from '../../types';
 import { theme } from '../../theme/theme';
 import { useNavigation } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { formatPrice } from '../../utils/formatters';
 
 interface ProductCardProps {
   product: Product;
@@ -39,7 +40,7 @@ export const ProductCard = ({ product, onPress, onDelete, onEdit, showActions = 
           {product.name}
         </Text>
         <Text style={styles.price}>
-          ${product.price.toFixed(2)}
+          {formatPrice(product.price)}
         </Text>
       </View>
       {showActions && (

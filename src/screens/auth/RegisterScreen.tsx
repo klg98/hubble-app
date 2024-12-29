@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth';
 import { auth } from '../../services/firebase';
 import { theme } from '../../theme/theme';
 import { Input } from '../../components/common/Input';
@@ -27,7 +27,21 @@ export const RegisterScreen = ({ navigation }: RegisterScreenProps) => {
       }
 
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      navigation.navigate('CompleteProfile', { email });
+      
+      // Mettre à jour le displayName de l'utilisateur
+      const displayName = email.split('@')[0]; // Utilise la partie avant @ comme nom par défaut
+      await updateProfile(userCredential.user, {
+        displayName: displayName
+      });
+      
+      // Envoyer l'email de vérification
+      await sendEmailVerification(userCredential.user);
+
+      // Rediriger vers l'écran de vérification
+      navigation.navigate('EmailVerification', { 
+        email,
+        userId: userCredential.user.uid
+      });
     } catch (error: any) {
       console.error('Registration error:', error);
       Alert.alert(
@@ -99,51 +113,42 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginVertical: theme.spacing.xl,
+    marginBottom: theme.spacing.xl,
   },
   tabContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginBottom: theme.spacing.lg,
+    marginBottom: theme.spacing.xl,
   },
   activeTab: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: theme.colors.text,
-    borderBottomWidth: 2,
-    borderBottomColor: theme.colors.primary,
-    paddingBottom: theme.spacing.sm,
   },
   inactiveTab: {
     fontSize: 16,
     color: theme.colors.textSecondary,
-    paddingBottom: theme.spacing.sm,
   },
   form: {
-    gap: theme.spacing.md,
+    marginBottom: theme.spacing.xl,
   },
   inputContainer: {
-    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.lg,
   },
   label: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: 'bold',
+    marginBottom: theme.spacing.xs,
     color: theme.colors.textSecondary,
   },
   button: {
-    marginTop: theme.spacing.lg,
-    backgroundColor: theme.colors.primary,
-    paddingVertical: theme.spacing.md,
-    borderRadius: theme.borderRadius.sm,
-    alignItems: 'center',
+    marginTop: theme.spacing.md,
   },
   buttonText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
   terms: {
-    marginTop: theme.spacing.xl,
     fontSize: 12,
     color: theme.colors.textSecondary,
     textAlign: 'center',

@@ -25,9 +25,14 @@ import { UserProfile } from '../../types';
 
 interface CompleteProfileScreenProps {
   navigation: any;
+  route?: {
+    params?: {
+      email?: string;
+    };
+  };
 }
 
-export const CompleteProfileScreen = ({ navigation }: CompleteProfileScreenProps) => {
+export const CompleteProfileScreen = ({ navigation, route }: CompleteProfileScreenProps) => {
   const [loading, setLoading] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [fullName, setFullName] = useState('');

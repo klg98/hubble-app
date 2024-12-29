@@ -15,6 +15,7 @@ import { db, auth } from '../../services/firebase';
 import { theme } from '../../theme/theme';
 import { Order } from '../../types';
 import { Ionicons } from '@expo/vector-icons';
+import { formatPrice } from '../../utils/formatters';
 
 export const ActiveOrdersScreen = () => {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -34,7 +35,6 @@ export const ActiveOrdersScreen = () => {
       const ordersQuery = query(
         collection(db, 'orders'),
         where('userId', '==', userId),
-        where('status', 'in', ['pending', 'processing', 'shipped']),
         orderBy('createdAt', 'desc')
       );
 
@@ -44,7 +44,14 @@ export const ActiveOrdersScreen = () => {
         ...doc.data(),
       })) as Order[];
 
-      setOrders(ordersData);
+      // Ne garder que les commandes qui ont au moins un ordersByStore avec un statut 'pending' ou 'processing'
+      const activeOrders = ordersData.filter(order => {
+        return Object.values(order.ordersByStore).some(
+          storeOrder => storeOrder.status === 'pending' || storeOrder.status === 'processing'
+        );
+      });
+
+      setOrders(activeOrders);
     } catch (error) {
       console.error('Error fetching orders:', error);
       Alert.alert('Erreur', 'Impossible de charger les commandes');
@@ -52,13 +59,6 @@ export const ActiveOrdersScreen = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  const formatPrice = (price: number) => {
-    return price.toLocaleString('fr-FR', {
-      style: 'currency',
-      currency: 'EUR',
-    });
   };
 
   const formatDate = (timestamp: number) => {

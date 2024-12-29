@@ -190,6 +190,7 @@ export const CreateStoreScreen = ({ navigation }: CreateStoreScreenProps) => {
         rating: 0,
         reviewCount: 0,
         followers: 0,
+        totalProducts: 0,
         isVerified: false,
         createdAt: Date.now(),
         updatedAt: Date.now(),

@@ -18,6 +18,7 @@ import { Product, Size } from '../../types';
 import { theme } from '../../theme/theme';
 import { Button } from '../../components/common/Button';
 import { Alert } from 'react-native';
+import { formatPrice } from '../../utils/formatters';
 
 const { width } = Dimensions.get('window');
 const IMAGE_HEIGHT = width;
@@ -78,13 +79,6 @@ export const ProductDetailsScreen = ({ route, navigation }: ProductDetailsScreen
     } catch (error) {
       console.error('Error checking cart:', error);
     }
-  };
-
-  const formatPrice = (price: number) => {
-    return price.toLocaleString('fr-FR', {
-      style: 'currency',
-      currency: 'EUR',
-    });
   };
 
   const getConditionText = (condition: string) => {

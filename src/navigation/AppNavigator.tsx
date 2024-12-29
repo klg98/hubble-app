@@ -4,12 +4,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { RootStackParamList, MainTabParamList, AuthStackParamList, HomeStackParamList, ProfileStackParamList, StoreStackParamList } from './types';
 import { auth, db } from '../services/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, reload } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { RegisterScreen } from '../screens/auth/RegisterScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
 import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
 import { CompleteProfileScreen } from '../screens/auth/CompleteProfileScreen';
+import { EmailVerificationScreen } from '../screens/auth/EmailVerificationScreen';
 import { HomeScreen } from '../screens/home/HomeScreen';
 import { StoreDetailsScreen } from '../screens/store/StoreDetailsScreen';
 import { ProductDetailsScreen } from '../screens/product/ProductDetailsScreen';
@@ -58,6 +59,7 @@ const AuthStackNavigator = () => {
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Register" component={RegisterScreen} />
       <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <AuthStack.Screen name="EmailVerification" component={EmailVerificationScreen} />
       <AuthStack.Screen name="CompleteProfile" component={CompleteProfileScreen} />
     </AuthStack.Navigator>
   );
@@ -265,11 +267,32 @@ export const AppNavigator = () => {
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [hasCompletedProfile, setHasCompletedProfile] = useState(false);
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+
+  // Fonction pour vérifier l'état de l'email
+  const checkEmailVerification = async (user: any) => {
+    try {
+      if (!user) return;
+      await reload(user);
+      const isVerified = user.emailVerified;
+      console.log('Email verification statu:', isVerified);
+      setIsEmailVerified(isVerified);
+      return isVerified; // Retourner l'état pour pouvoir arrêter l'intervalle
+    } catch (error) {
+      console.error('Error checking email verification:', error);
+      return false;
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setIsAuthenticated(true);
+        setUserEmail(user.email || '');
+        
+        // Vérifier immédiatement l'état de l'email
+        const isVerified = await checkEmailVerification(user);
         
         // Écouter les changements du profil utilisateur
         const userRef = doc(db, 'users', user.uid);
@@ -281,12 +304,33 @@ export const AppNavigator = () => {
           setLoading(false);
         });
 
+        // Vérifier périodiquement l'état de l'email seulement s'il n'est pas vérifié
+        let emailCheckInterval: NodeJS.Timeout | null = null;
+        if (!isVerified) {
+          emailCheckInterval = setInterval(async () => {
+            const currentVerificationStatus = await checkEmailVerification(user);
+            if (currentVerificationStatus) {
+              // Si l'email est vérifié, arrêter l'intervalle
+              if (emailCheckInterval) {
+                clearInterval(emailCheckInterval);
+                emailCheckInterval = null;
+                console.log('Email verification check stopped - email is verified');
+              }
+            }
+          }, 2000);
+        }
+
         return () => {
           unsubscribeDoc();
+          if (emailCheckInterval) {
+            clearInterval(emailCheckInterval);
+          }
         };
       } else {
         setIsAuthenticated(false);
         setHasCompletedProfile(false);
+        setIsEmailVerified(false);
+        setUserEmail('');
         setLoading(false);
       }
     });
@@ -307,11 +351,17 @@ export const AppNavigator = () => {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <Stack.Screen name="Auth" component={AuthStackNavigator} />
+        ) : !isEmailVerified ? (
+          <Stack.Screen 
+            name="EmailVerification" 
+            component={EmailVerificationScreen}
+            initialParams={{ email: userEmail }}
+          />
         ) : !hasCompletedProfile ? (
           <Stack.Screen 
-            name="InitialProfile" 
-            component={CompleteProfileScreen} 
-            options={{ gestureEnabled: false }}
+            name="CompleteProfile" 
+            component={CompleteProfileScreen}
+            initialParams={{ email: userEmail }}
           />
         ) : (
           <Stack.Screen name="Main" component={TabNavigator} />

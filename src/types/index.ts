@@ -21,6 +21,7 @@ export interface Store {
   contactPhone: string;
   categories: string[];
   rating: number;
+  totalProducts: number;
   reviewCount: number;
   followers: number;
   following: number; // Nombre de fidélisations
